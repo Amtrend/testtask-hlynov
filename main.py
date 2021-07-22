@@ -11,18 +11,22 @@ import re
 import logging
 
 
+'''запуск с параметром'''
 script, path_to_file = argv
 
+'''определяем имя, директорию и пр.'''
 full_filename = path.basename(path_to_file)
 dir_filename = path.dirname(path_to_file)
 name_filename = path.splitext(full_filename)[0]
 type_file = path.splitext(full_filename)[1]
 
+'''создаём папку для логов'''
 try:
     mkdir(f"{path.join(dir_filename, 'log')}")
 except FileExistsError:
     pass
 
+'''настройки логирования'''
 logfile = path.join(dir_filename, 'log') + '/logs.txt'
 log = logging.getLogger("logs")
 log.setLevel(logging.INFO)
@@ -34,9 +38,11 @@ log.addHandler(FH)
 log.info(f"Обрабатывается файл {full_filename}, расположенный в {dir_filename}")
 
 with open(path_to_file, 'r') as file:
+    '''открываем файл и проверяем формат'''
     if type_file == '.xml':
         input_file = file.read()
 
+        '''определяем кодировку исходного файла'''
         try:
             encoding_matches = re.search(r'(?<=encoding=")[^"]+', input_file)
             encoding = encoding_matches[0]
@@ -48,12 +54,15 @@ with open(path_to_file, 'r') as file:
         tree = ET.parse(path_to_file)
         xml_data = tree.getroot()
 
+        '''циклом достаём из файла нужные значения и сохраняем'''
         all_rows = []
         count = 0
         for word in xml_data.iter('Плательщик'):
             count += 1
             row = []
             row.append(name_filename)
+
+            '''проверяем наличие даты, приводим к нужному формату'''
             try:
                 date = xml_data.find('СлЧаст/ОбщСвСч/ИдФайл/ДатаФайл').text
                 date_parse = parse(date)
@@ -62,6 +71,7 @@ with open(path_to_file, 'r') as file:
             except:
                 log.error(f"Cтрока номер {count} не имеет одного из ключевых реквизитов (даты)")
 
+            '''проверяем наличие ключевого параметра'''
             l_score = word.find('ЛицСч').text
             if l_score != None:
                row.append(l_score)
@@ -73,6 +83,7 @@ with open(path_to_file, 'r') as file:
             address = word.find('Адрес').text
             row.append(address)
 
+            '''получаем период и валидируем'''
             period = word.find('Период').text
             try:
                 valid_period = datetime.strptime(period, '%m%Y')
@@ -80,6 +91,7 @@ with open(path_to_file, 'r') as file:
             except:
                 log.error(f"Не верный формат Период - {period}. Строка Плательщика с ЛицСч - {l_score}")
 
+            '''получаем сумму и валидируем'''
             summ = word.find('Сумма').text
             try:
                 if len(summ.split('.')[1]) == 2:
@@ -89,6 +101,9 @@ with open(path_to_file, 'r') as file:
 
             all_rows.append(row)
 
+        '''создаём два вложенных списка
+            1. Список с Плательщиками, у которых совпадение по полям ЛицСч и Период
+            2. Итоговый список, который надо записать'''
         not_unique_values = []
         all_lists = list(permutations(all_rows, 2))
         for ls in all_lists:
@@ -98,6 +113,7 @@ with open(path_to_file, 'r') as file:
         not_unique_values = list(set([tuple(i) for i in not_unique_values]))
         unique_values = [some_list for some_list in all_rows if tuple(some_list) not in not_unique_values]
 
+        '''Проходим по списку с совпадениями и логируем данные записи'''
         count_res = -1
         for i in not_unique_values:
             count_res += 1
@@ -105,11 +121,13 @@ with open(path_to_file, 'r') as file:
             del_res_period = all_rows[all_rows.index(list(not_unique_values[count_res]))][5]
             log.error(f"Найдены записи с одинаковыми ЛицСч {del_res_l_score} и Периодом {del_res_period}. Данные записи не добавлены в исходный файл")
 
+        '''пишем итоговый список в новый файл с необходимыми параметрами'''
         with open(f"{dir_filename}/{name_filename}.csv", 'w', encoding=encoding, newline='') as res_file:
             csv_writer = csv.writer(res_file, delimiter=';')
             for res_row in unique_values:
                 csv_writer.writerow(res_row)
 
+        '''создаём папку, перемещаем исходник'''
         try:
             mkdir(f"{path.join(dir_filename, 'arh')}")
         except FileExistsError:
@@ -120,6 +138,7 @@ with open(path_to_file, 'r') as file:
         log.info(f"Файл {full_filename} обработан и перемещён в {arh_path}. В директории {dir_filename} создан итоговый файл {name_filename}.csv")
 
     else:
+        '''создаём папку для файла, который не прошёл валидацию на формат и перемещаем'''
         file.close()
         try:
             mkdir(f"{path.join(dir_filename, 'bad')}")
