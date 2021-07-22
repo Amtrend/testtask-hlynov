@@ -1,0 +1,5 @@
+/venv/
+.idea/
+test_loop.py
+train.py
+some
